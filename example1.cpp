@@ -61,5 +61,8 @@ PYBIND11_MODULE(example1, m) {
 
     //The method module_::def() generates binding code that exposes the add() function to Python.
     // calls PyModule_AddObject() internally
+
+    // What truly amazing is how signature of add is parsed by pybind11 using meta programing
+
     m.def("add", &add, "A function that adds two numbers");
 }
