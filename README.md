@@ -34,12 +34,60 @@ https://godbolt.org/
 https://cppinsights.io/
 https://github.com/andreasfertig/cppinsights
 
-## how __doc__ is set in `m.def` ?
+## What's happend in `m.def` ?
 
 with following pybind11 C++ source:
 ```cpp
 m.def("add", &add, "A function that adds two numbers");
 ```
+
+This magic method "def" wraps a normal C++ function `add` into a python function object.
+which we know is quite complex procedure that involves many details including [^1]
+
+ - implement a wrapper function accepts `PyObject*` arguments;
+ - parse & convert positional & keywords args from tuple & dict(using `PyArg_ParseTuple` for example)
+   inside the wrapper and pass the result into C/C++ functions;
+```c
+static PyObject *
+spam_system(PyObject *self, PyObject *args)
+{
+    const char *command;
+    int sts;
+
+    if (!PyArg_ParseTuple(args, "s", &command))
+        return NULL;
+    sts = system(command);
+    return PyLong_FromLong(sts);
+}
+```
+ - create `PyMethodDef` to define the wrapper to Python;
+```c
+static PyMethodDef SpamMethods[] = {
+    ...
+    {"system",  spam_system, METH_VARARGS, "Execute a shell command."},
+    ...
+    {NULL, NULL, 0, NULL}        /* Sentinel */
+};
+```
+ - add it into `PyModuleDef` (using `PyModule_AddObject`)
+
+
+Using the meta-programing technique, pybind11 magically does all above automatically for you.
+`cpp_function` is the meta-class wrapper which wraps the function and exported to python.
+
+all magic happens inside `cpp_function::initialize()`:
+
+ - `cpp_function::dispatcher()` is the python wrapper that collect arg one by one
+   from positional arguments tuple & keyword arguments dict, and store them in
+   `struct function_call`.
+ - `argument_loader<Args...>` template specialized for target function will
+   load each arg into instances of `type_caster_base` in `argcasters` tuple.
+   each of these instances has a convertion operator overloaded for particular
+   target arg type
+ - `argument_loader<Args...>::call` finally performs the invokation by passing
+   all items in `argcasters` one by one to `f` callable.
+
+## how __doc__ is set in `m.def` ?
 
 what we saw in python
 ```python
@@ -96,3 +144,6 @@ initialize_generic(...) {
 }
 
 ```
+
+
+[^1]: https://docs.python.org/3/extending/extending.html
